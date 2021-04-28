@@ -1,0 +1,27 @@
+lag graph 1.0 by Syvil
+This chip measures and displays the difference in the rate of time between the game's relative time and the server's actual time.
+How to set up:
+  1. Spawn a starfall screen
+  2. Place lag_graph/lag_graph_init.txt chip
+  3. Link the screen to the chip
+
+Wire I/O
+  Inputs:
+    Threshold: When wired, will override the default logging threshold of the chip (unit is milliseconds)
+    Cutoff: When wired, will override the default upper & lower cutoff of the graph (unit is milliseconds)
+    Print: When it receives a non-0 value, the current count of the peak log will be printed to chat
+  
+  Outputs:
+    AveGap: Outputs the average gap between detected peaks in seconds
+    AvePeak: Outputs the average intensity of the peaks
+
+Peak log:
+  Whenever the value of the graph exceeds the threshold, a new entry is added to the peak log.
+  Pressing E on the chip as its owner will save, and then clear the current peak log to data/sf_filedata/lagometerpeaklogs as a json table.
+  Entries are a table containing:
+    ["time"] = realtime() when the peak occured
+    ["intensity"] = intensity of the peak
+  This table can be loaded into external programs for analysis, such as excell.
+
+Note: due to the nature of floating point time, the graph will lose precision the longer the server has been up.
+  
