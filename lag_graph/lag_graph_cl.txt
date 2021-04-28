@@ -1,0 +1,169 @@
+--@name Lag Graph CL
+--@author Syvil
+--@client
+--PLACE INIT FILE, NOT THIS FILE
+
+local threshold = defaultThresh or 50
+local cutoff = defaultCutoff or 100
+local graphHeight = 200 --pxl
+local graphTop = 256 - graphHeight --pxl
+local graphBot = 256 + graphHeight
+local graphThickness = graphHeight + graphHeight --pxl
+local threshOffCenter = (threshold/cutoff) * graphHeight --pxl
+local threshTop = 256 - threshOffCenter --pxl
+local threshBot = 256 + threshOffCenter --pxl
+
+local graphTimeRate = {} --Table of data
+local graphXCount = 512 --Line segments
+local graphX = 0 --Current segment in table
+local graphXWidth = 512 / graphXCount --pxl
+
+local verticalTime = 16 --ticks
+local verticalDistance = 512 / verticalTime
+local verticalCount = 512 / verticalDistance
+local verticalXs = {}
+for I = 1, verticalCount do
+    local X = I * verticalDistance
+    table.insert( verticalXs, X )
+end
+
+local topCutt = "+"..cutoff.."ms/tick"
+local botCutt = "-"..cutoff.."ms/tick"
+local topThresh = "+"..threshold.."ms/tick"
+local botThresh = "-"..threshold.."ms/tick"
+
+local vMull = 1000 * graphHeight / cutoff
+
+net.receive( "Threshold", function()
+    threshold = net.readFloat()
+    recalcGraphVars()
+end )
+
+net.receive( "Cutoff", function()
+    cutoff = net.readFloat()
+    recalcGraphVars()
+end )
+
+net.receive( "DiffTick", function()
+    local diff = net.readFloat()--DRDiff s/s
+    graphTimeRate[graphX] = diff
+    graphX = graphX + 1
+    if graphX >= graphXCount then
+        graphX = 0
+    end
+end )
+
+net.receive( "PeakLog", function()
+    if player() == owner() then
+        net.readStream( function(peakJson)
+            if not peakJson then
+                print("Failed to stream log")
+                return
+            end
+            savePeakLog(peakJson)
+        end )
+    end
+end )
+
+function savePeakLog(PeakLog) -- Saved to data/sf_data/LagometerPeakLogs/LagPeaks_DATE_TIME.txt
+    local directory = "LagometerPeakLogs"
+    if #PeakLog < 1 then
+        print("Log table was empty, save canceled")
+        return
+    end
+    if not file.exists(directory)then
+        file.createDir(directory)
+    end
+    local fileName = directory .. "/LagPeaks_" .. os.date("%y%m%d_%H%M%S", os.time()) .. ".txt"
+    if file.exists(fileName) then
+        print( "Log file already exists, please wait 1 second" )
+        return
+    end
+    file.write( fileName, PeakLog )
+    print( "Log saved to " .. fileName )
+    clearPeakLog()
+end
+
+function clearPeakLog()
+    if player() == owner() then
+        net.start("ClearLog")
+        net.send()
+    end
+end
+
+function requestPeakLog()
+    if player() == owner() then
+        net.start("RequestLog")
+        net.send()
+    end
+end
+
+function recalcGraphVars()
+    graphHeight = 200 --pxl
+    graphTop = 256 - graphHeight --pxl
+    graphBot = 256 + graphHeight
+    graphThickness = graphHeight + graphHeight --pxl
+    threshOffCenter = ( threshold / cutoff ) * graphHeight --pxl
+    threshTop = 256 - threshOffCenter --pxl
+    threshBot = 256 + threshOffCenter --pxl
+    
+    topCutt = "+" .. cutoff .. "ms/tick"
+    botCutt = "-" .. cutoff .. "ms/tick"
+    topThresh = "+" .. threshold .. "ms/tick"
+    botThresh = "-" .. threshold .. "ms/tick"
+    
+    vMull = 1000 * graphHeight / cutoff
+end
+
+hook.add( "starfallUsed", "chip_pressed", function( activator, used )
+    if activator == owner() and used == chip() then
+        requestPeakLog()
+    end
+end )
+
+--Localize super common render function
+local drawLine = render.drawLine
+local drawText = render.drawText
+local setColor = render.setColor
+hook.add( "render", "graph_render", function()
+    --if player():getPos():getDistanceSqr(chip():getPos()) >= 230400 then return end--480^2 --Distance Cutoff for rendering, requested by StrawWagen
+    --Background
+    render.setBackgroundColor( Color( 127, 255, 255 ), screen )
+    
+    --Graph Background
+    setColor(Color( 0, 127, 127 ))
+    render.drawRectFast( 0, graphTop, 512, graphThickness )
+    setColor(Color( 0, 63, 63 ))
+    drawText( 0, graphTop, topCutt )
+    --drawText( 0, graphBot - 16, botCutt )
+    
+    --Vertical Grid
+    setColor(Color( 0, 100, 100 ))
+    for I = 1, #verticalXs do
+        local X = verticalXs[I] or 0
+        drawLine( X, graphTop, X, graphBot )
+    end
+    
+    --Center Line
+    setColor(Color( 0, 200, 0 ))
+    render.drawRect( 0, 255, 512, 2 )
+    
+    --Threshold Lines
+    setColor(Color( 200, 0, 0 ))
+    --top
+    drawLine( 0, threshTop, 512, threshTop )
+    drawText( 0, threshTop - 16, topThresh )
+    --bottom
+    drawLine( 0, threshBot, 512, threshBot )
+    --drawText( 0, threshBot, botThresh )
+    
+    --Garph Line
+    setColor(Color( 255, 255, 255 ))
+    for I = 1, #graphTimeRate do
+        local Y1 = graphTimeRate[I-1] * vMull
+        local Y2 = graphTimeRate[I] * vMull
+        drawLine( graphXWidth * ( I - 1 ), 256 - Y1, graphXWidth * I, 256 - Y2 )
+    end
+    local xPos = graphXWidth * ( graphX - 1 )
+    drawLine( xPos, graphTop, xPos, graphBot )
+end )

@@ -1,0 +1,127 @@
+--@name Lag Graph SV
+--@author Syvil
+--@server
+--PLACE INIT FILE, NOT THIS FILE
+
+--Config
+local averageLength = 6 --How many peaks to consider in gap average
+
+--Function Localization
+local realtime = timer.realtime
+local curtime = timer.curtime
+
+local threshold = defaultThresh or 50
+local cutoff = defaultCutoff or 100
+local peakLog = {}
+
+wire.adjustInputs( { "Threshold", "Cutoff", "Print" }, { "Number", "Number", "Number" } )
+wire.adjustOutputs( { "AveGap", "AvePeak" }, { "Number", "Number" } )
+wire.ports.AveGap = 0
+wire.ports.AvePeak = 0
+
+local averageLog = {}
+function calcAverage()
+    local count = #averageLog
+    if count < 2 then return 0, 0 end
+    local aveGap = 0
+    local avePeak = 0
+    for I = 2, count do
+        local now = averageLog[I].time
+        local last = averageLog[I-1].time
+        local diff = last - now
+        aveGap = aveGap + diff
+        avePeak = avePeak + averageLog[I].intensity
+    end
+    aveGap = aveGap / (count - 1)
+    avePeak = avePeak / (count - 1)
+    return aveGap, avePeak
+end
+
+function sendThreshold( Threshold, Player )
+    net.start("Threshold")
+    net.writeFloat(Threshold)
+    net.send(Player)
+end
+
+function sendCutoff( Cutoff, Player )
+    net.start("Cutoff")
+    net.writeFloat(Cutoff)
+    net.send(Player)
+end
+
+hook.add( "input", "value_change", function( inp, val )
+    if val and (val >= 1) then
+        if inp == "Print" then
+            print( #peakLog .. " entries in table" )
+        elseif inp == "Threshold" then
+            threshold = math.round(val)
+            sendThreshold(threshold)
+        elseif inp == "Cutoff" then
+            cutoff = math.round(val)
+            sendCutoff(cutoff)
+        end
+    end
+end )
+
+--Logica's magic formula
+local lastDiff = realtime() - curtime()
+function getTimeRateDiff() --returns float in s/s, up to at least 4 decimal places
+    local diff = realtime() - curtime()
+    local delta = diff - lastDiff
+    lastDiff = diff
+    return delta
+end
+
+
+--hl1/fvox/boop.wav  buttons/button16.wav  hl1/fvox/blip.wav  hl1/fvox/fuzz.wav
+sound = sounds.create( chip(), "hl1/fvox/blip.wav" )
+function outOfThresh(diff)
+    local entry = {
+        ["time"] = realtime(),
+        ["intensity"] = diff * 1000
+    }
+    table.insert( peakLog, entry )
+    sound:play()
+    timer.simple(0.41, function()
+        sound:stop()
+    end)
+    table.insert( averageLog, 1, entry )
+    averageLog[ averageLength + 1 ] = nil
+    local aveGap, avePeak = calcAverage()
+    wire.ports.AveGap = math.round( aveGap, 2 )
+    wire.ports.AvePeak = math.round( avePeak, 2 )
+end
+
+hook.add( "tick", "sample_rate", function()
+    local diff = getTimeRateDiff()--DRDiff s/s
+    net.start("DiffTick")
+    net.writeFloat(diff)
+    net.send()
+    if math.abs( diff * 1000 ) >= threshold then --Hit a peak
+        outOfThresh(diff)
+    end
+end )
+
+hook.add( "ClientInitialized", "variable_send", function(Player)
+    sendThreshold( threshold, Player )
+    sendCutoff( cutoff, Player )
+end )
+
+net.receive( "RequestLog", function( _, ply )
+    if ply ~= owner() then
+        print( tostring(ply) .. " sent illegal net message!" )
+        return
+    end
+    local logJson = json.encode(peakLog)
+    net.start("PeakLog")
+    net.writeStream(logJson)
+    net.send(owner())
+end )
+
+net.receive( "ClearLog", function( _, ply)
+    if ply ~= owner() then
+        print( tostring(ply) .. " sent illegal net message!" )
+        return
+    end
+    peakLog = {}
+end )

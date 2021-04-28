@@ -1,0 +1,13 @@
+--@name Lag Graph MAIN 1.0
+--@author Syvil
+--@shared
+--@include lag_graph/lag_graph_cl.txt
+--@include lag_graph/lag_graph_sv.txt
+--USE THIS FILE
+
+--Settings, can be changed live via wire inputs
+defaultThresh = 50 --ms/s
+defaultCutoff = 100 --ms/s
+
+require("lag_graph/lag_graph_cl.txt")
+require("lag_graph/lag_graph_sv.txt")
