@@ -1,0 +1,62 @@
+vnet_base_funcs.txt:
+  Functions and hooks used for the sending and receiving of packets over the vON network.
+    Functions:
+      netEncode(contents)
+        Encodes a table as a vnet packet, the exact format depends on the value of vON, line 13. By default it uses the sf-e2 compatible format.
+        Arguments: table contents, The table to be encoded.
+        Returns: string, The encoded table. 
+      
+      netDecode(packet)
+        Decodes a vnet packet into a table, the exact format depends on the value of vON, line 13. By default it uses the sf-e2 compatible format.
+        Arguments: string packet, The packet to decode.
+        Returns: table, The decoded table.
+        
+      isInput(portName)
+        Checks if there is an input port registered with the supplied name.
+        Arguments: string portName, The name of the wire port.
+        Returns: bool, true if the input exists, false if it doesn't.
+      
+      isOutputs(portName)
+        Checks if there is an output port registered with the supplied name.
+        Arguments: string portName, The name of the wire port.
+        Returns: bool, true if the output exists, false if it doesn't.
+      
+      registerInput(portName)
+        Adds a wire input as a vnet input port. Inputs on this port will be decoded and passed to a hook.
+        Arguments: string portName, The name of the wire port.
+        Returns: bool, true if the input was added succesfully, false if it wasn't.
+      
+      registerOutput(portName)
+        Adds a wire output as a vnet output port. Relevent timers will be created
+        Arguments: string portName, The name of the wire port.
+        Returns: bool, true if the output was added succesfully, false if it wasn't.
+      
+      unregisterInput(portName)
+        Removes a wire input from being a vnet input port. Inputs to this port will no longer be decoded and passed to a hook.
+        Arguments: string portName, The name of the wire port.
+      
+      unregisterOutput(portName)
+        Removes a wire output from being a vnet output port. Relevent timers will be destroyed.
+        Arguments: string portName, The name of the wire port.
+      
+      forceResetOutput(portName)
+        Reset a vnet output port early and stop it's internal timer.
+        Arguments: string portName, The name of the wire port.
+      
+      outputTable(portName, table)
+        Encodes and transmits a table over a vnet output port.
+        Arguments: string portName, The name of the wire port.
+                   table table, The contents to encode and transmit, see vnet manual for more details.
+        Returns: bool, true if the output is registered, false if it isn't.
+      
+      typeResponse(portName, targetIP, type, value)
+        Shortcut for creating and transmitting a response packet to a target IP.
+        Arguments: string portName, The name of the wire port.
+                   number targetIP, The vnet route/ip to the target device, see vnet manual for more details.
+                   string type, The type the response is marked as having, left as a manual input for custom response types, see vnet manual for more details.
+                   any value, The value to include in the response, should be of a vON supported type.
+      
+    Hooks:
+      vnetInput_[portName](value)
+        Hook called when an vnet input port recieves a packet.
+        Arguments: string value, the vnet packet, use the netDecode function to decode this.
