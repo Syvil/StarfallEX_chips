@@ -1,0 +1,163 @@
+--@name Vnet base function
+--@author Syvil
+--@server
+
+local vnetBase = {}
+
+local vnetInputs = {}
+local vnetOutputs = {}
+
+vnetBase.isInput = function( portName ) return vnetInputs[ portName ] or false end
+vnetBase.isOutputs = function( portName ) return vnetOutputs[ portName ] or false end
+
+vON = 2
+
+if vON == 2 then --retarded e2 compattible vON
+    local e2Types = {
+        --["table"] = "t", --need to upgrade to recursive for this
+        [ "number" ] = "n",
+        [ "string" ] = "s",
+        [ "Vector" ] = "v",
+        [ "Angle" ] = "a",
+        [ "Entity" ] = "e"
+    }
+    vnetBase.netEncode = function( Packet )
+        local n = {}
+        local ntypes = {}
+        local s = {}
+        local stypes = {}
+        for Key, Value in pairs( Packet ) do
+            if type( Key ) == "string" then
+                local valType = type( Value )
+                if e2Types[ valType ] then
+                    s[ Key ] = Value
+                    stypes[ Key ] = e2Types[ valType ]
+                end
+            else
+                local valType = type( Value )
+                if e2Types[ valType ] then
+                    n[ Key ] = Value
+                    ntypes[ Key ] = e2Types[ valType ]
+                end
+            end
+        end
+        local combined = {
+            [ "n" ] = n,
+            [ "ntypes" ] = ntypes,
+            [ "s" ] = s,
+            [ "stypes" ] = stypes,
+            [ "size" ] = table.count( Packet )
+        }
+        return von.serialize( combined )
+    end
+    vnetBase.netDecode = function( Packet )
+        local tempTable = von.deserialize( Packet )
+        local Ntable = tempTable[ "n" ]
+        local Stable = tempTable[ "s" ]
+        table.merge( Ntable, Stable )
+        return Ntable
+    end
+elseif vON == 1 then --regular vON, fuck e2
+    vnetBase.netEncode = function( Packet )
+        return von.serialize( Packet )
+    end
+    vnetBase.netDecode = function( Packet )
+        return von.deserialize( Packet )
+    end
+else
+    vnetBase.netEncode = function( Packet )
+        return json.encode( Packet)
+    end
+    vnetBase.netDecode = function( Packet )
+        return json.decode( Packet )
+    end
+end
+
+local function netOutReset( portName )--resets portName or JNet line to "", allows re-sending the same packet
+    --timer.stop("NetOutReset")
+    if type( portName ) == "string" then
+        wire.ports[ portName ] = ""
+    end
+end
+
+
+local function netRegisterInput( portName ) --sets an input port up as a VNET channel, true if port exists, otherwise false
+    local inputs = wire.getInputs( chip() )
+    if table.hasValue( inputs, portName ) then
+        vnetInputs[ portName ] = true
+        return true
+    end
+    return false
+end
+vnetBase.registerInput = netRegisterInput
+
+local function timerName( portName ) return "VnetReset_"..portName end
+
+local function netRegisterOutput( portName )
+    local outputs = wire.getOutputs(chip())
+    if table.hasValue(outputs, portName) then
+        vnetOutputs[ portName ] = true
+        local tName = timerName( portName )
+        local function netResetRegistered()
+            timer.stop( tName )
+            netOutReset( portName )
+        end
+        timer.create( tName, 0.1, 0, netResetRegistered )
+        timer.stop( tName )
+        return true
+    end
+    return false
+end
+vnetBase.registerOutput = netRegisterOutput
+
+local function netUnregisterInput( portName ) --removes an input port from being treated as a VNET channel
+    vnetInputs[ portName ] = nil
+end
+vnetBase.unregisterInput = netUnregisterInput
+
+local function netUnregisterOutput( portName ) --removes an input port from being treated as a VNET channel
+    vnetOutputs[ portName ] = nil
+    timer.remove( timerName( portName ) )
+    netOutReset( portName )
+end
+vnetBase.unregisterOutput = netUnregisterOutput
+
+local function netForceReset( portName )
+    if vnetOutputs[ portName ] then
+        timer.stop( timerName( portName ) )
+        netOutReset( portName )
+    end
+end
+vnetBase.forceResetOutput = netForceReset
+
+local function netOutTransmit( portName, Table ) --Encodes packet table and sends on JNet line
+    if vnetOutputs[ portName ] then
+        wire.ports[ portName ] = vnetBase.netEncode( Table )
+        timer.start( timerName( portName ) )
+        return true
+    end
+    return false
+end
+vnetBase.outputTable = netOutTransmit
+
+local function typeResponse( portName, targetIP, type, value ) --Creates a response value type response
+    if not (targetIP and type and (value ~= nil)) then return end
+    local type = string.lower(type)
+    netOutTransmit( portName, {
+        ["ipr"] = targetIP,
+        ["command"] = "response_"..type,
+        [type] = value
+    })
+end
+vnetBase.typeResponse = typeResponse
+
+hook.add( "input", "vnetBase_Input", function( Port, Value )
+    if not vnetInputs[ Port ] then return end
+    if Value == "" then return end
+    hook.run("vnetInput_"..Port, Value)
+end)
+--timer.create("NetOutReset", 0.1, 0, netOutReset)
+--timer.stop("NetOutReset")
+--vnetBase.outputReset = netOutReset
+
+return vnetBase
